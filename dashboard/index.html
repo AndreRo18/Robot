@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Robot minero · Panel de operación</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --roca:#d9d1bf; --panel:#ece7da; --borde:#bcb29a; --texto:#2d3329; --apagado:#68705c;
+  --mineral:#5d7a52; --auto:#7d6a47; --alerta:#c0432f; --aviso:#c9962b; --ok:#5f8a55;
+  --salvia-clara:#a9c79a;
+  --titulo:"Barlow Condensed","Arial Narrow",sans-serif; --cuerpo:"Barlow","Segoe UI",Arial,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--roca);color:var(--texto);font:500 15px/1.4 var(--cuerpo)}
+h2{font:700 20px/1 var(--titulo);letter-spacing:.04em;margin:0 0 12px}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible{outline:3px solid var(--mineral);outline-offset:2px}
+
+/* Barra superior: modo */
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;padding:12px 20px;background:var(--panel);border-bottom:4px solid var(--mineral)}
+header.auto{border-bottom-color:var(--auto)}
+.marca{font:700 26px/1 var(--titulo);letter-spacing:.03em}
+.marca small{display:block;font:500 13px var(--cuerpo);color:var(--apagado);letter-spacing:0}
+.modo{display:flex;align-items:center;gap:14px}
+.selector{display:flex;border:2px solid var(--borde);border-radius:6px;overflow:hidden}
+.selector button{border:0;background:transparent;padding:10px 22px;font:700 20px var(--titulo);letter-spacing:.04em;color:var(--apagado)}
+.selector button[aria-pressed=true].m{background:var(--mineral);color:#fff}
+.selector button[aria-pressed=true].a{background:var(--auto);color:#fff}
+.estado{font:700 22px var(--titulo);padding:8px 16px;border-radius:6px;background:var(--roca);border:2px solid var(--mineral);color:var(--mineral);min-width:0;text-align:center}
+.estado.auto{border-color:var(--auto);color:var(--auto)}
+.conexion{display:flex;align-items:center;gap:8px;color:var(--apagado)}
+.punto{width:10px;height:10px;border-radius:50%;background:var(--aviso)}
+.punto.ok{background:var(--ok)}
+.parada{background:var(--alerta);border:0;border-radius:6px;padding:12px 20px;font:700 20px var(--titulo);letter-spacing:.05em;color:#fff}
+.parada:active{filter:brightness(.85)}
+
+.grupo-estado{display:flex;flex-direction:column;gap:6px}
+.bateria{display:flex;align-items:center;gap:8px;font:700 18px var(--titulo);font-variant-numeric:tabular-nums}
+.bat-barra{position:relative;width:62px;height:22px;border:2px solid var(--texto);border-radius:4px;padding:2px}
+.bat-barra::after{content:"";position:absolute;right:-7px;top:4px;width:4px;height:8px;background:var(--texto);border-radius:0 2px 2px 0}
+.bat-barra i{display:block;height:100%;width:0;background:var(--ok)}
+.bateria.aviso i{background:var(--aviso)}.bateria.alerta i{background:var(--alerta)}
+.banner{background:var(--alerta);color:#fff;padding:10px 20px;font:700 20px var(--titulo);letter-spacing:.02em}
+.banner.aviso{background:var(--aviso);color:#2d3329}
+.sensor:last-child:nth-child(odd){grid-column:1/-1}
+/* Distribución */
+main{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(300px,1fr);gap:16px;padding:16px 20px}
+section{background:var(--panel);border:1px solid var(--borde);border-radius:8px;padding:16px}
+.col{display:grid;gap:16px;align-content:start}
+
+/* Cámaras */
+.camaras{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.cam{position:relative;background:#232a22;border:2px solid var(--borde);border-radius:6px;overflow:hidden;cursor:pointer;height:170px;padding:0;text-align:left}
+.cam.principal{grid-column:1/-1;order:-1;height:380px;cursor:default;border-color:var(--mineral)}
+.cam img,.cam canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.cam .nombre{position:absolute;left:8px;top:8px;color:#f1ede2;background:rgba(35,42,34,.85);padding:3px 10px;border-radius:4px;font:700 15px var(--titulo);letter-spacing:.04em;z-index:2}
+.cam .sin{position:absolute;inset:auto 8px 8px auto;background:rgba(229,83,61,.9);padding:2px 8px;border-radius:4px;font-size:12px;z-index:2;display:none}
+.cam.offline .sin{display:block;color:#fff}
+
+/* Mando */
+.mando{display:grid;grid-template-columns:repeat(3,70px);grid-template-rows:repeat(3,70px);gap:8px;justify-content:center}
+.mando button{background:var(--roca);border:2px solid var(--borde);border-radius:8px;font:700 28px var(--titulo)}
+.mando button.activo,.mando button:active{background:var(--mineral);color:#fff;border-color:var(--mineral)}
+.mando .c{background:var(--alerta);border-color:var(--alerta);color:#fff;font-size:16px}
+.mando :nth-child(1){grid-area:1/2}.mando :nth-child(2){grid-area:2/1}.mando :nth-child(3){grid-area:2/2}
+.mando :nth-child(4){grid-area:2/3}.mando :nth-child(5){grid-area:3/2}
+fieldset{border:0;padding:0;margin:0}
+fieldset:disabled{opacity:.35;pointer-events:none}
+.comando{margin-top:12px;display:flex;justify-content:space-between;gap:8px;background:var(--roca);border-radius:6px;padding:8px 12px;font-variant-numeric:tabular-nums}
+.comando b{color:var(--mineral)}
+label.rango{display:block;margin-top:12px;color:var(--apagado)}
+input[type=range]{width:100%;accent-color:var(--mineral)}
+.aviso-auto{display:none;margin:0 0 12px;padding:8px 12px;border-radius:6px;background:rgba(125,106,71,.16);color:var(--auto)}
+.es-auto .aviso-auto{display:block}
+
+/* Brazo */
+.brazo-vistas{display:grid;grid-template-columns:2fr 1fr;gap:8px;margin-bottom:8px}
+.brazo-vistas svg{width:100%;height:auto;background:var(--roca);border-radius:6px;display:block}
+.art{display:grid;grid-template-columns:78px 1fr 62px;gap:8px;align-items:center;margin-top:6px}
+.art span{color:var(--apagado)}
+.art output{font:700 17px var(--titulo);text-align:right;font-variant-numeric:tabular-nums}
+.art small{display:block;color:var(--apagado);font-size:11px;text-align:right;font-weight:500}
+.brazo-btn{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.brazo-btn button{padding:9px;border-radius:6px;border:2px solid var(--borde);background:var(--roca);font:700 18px var(--titulo);color:var(--texto)}
+.brazo-btn button:hover{border-color:var(--mineral)}
+/* Pinza */
+.pinza{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.pinza button{padding:10px;border-radius:6px;border:2px solid var(--borde);background:var(--roca);font:700 18px var(--titulo)}
+.pinza button:hover{border-color:var(--mineral)}
+.pinza button{color:var(--texto)}
+.pinza-info{display:flex;gap:16px;margin-top:10px;color:var(--apagado)}
+.pinza-info b{color:var(--texto)}
+
+/* Sensores */
+.sensores{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.sensor{background:var(--roca);border-left:5px solid var(--ok);border-radius:4px;padding:8px 12px}
+.sensor.aviso{border-left-color:var(--aviso)}.sensor.alerta{border-left-color:var(--alerta)}
+.sensor span{display:block;color:var(--apagado);font-size:13px}
+.sensor b{font:700 26px/1.1 var(--titulo);font-variant-numeric:tabular-nums}
+.sensor small{color:var(--apagado);font-size:13px;margin-left:3px}
+@media (max-width:980px){main{grid-template-columns:1fr}.cam.principal{height:260px}}
+@media (prefers-reduced-motion:no-preference){.punto{transition:background .3s}}
+</style>
+</head>
+<body>
+
+<header id="cabecera">
+  <div class="marca">Robot minero<small>Panel de operación</small></div>
+  <div class="modo">
+    <div class="selector" role="group" aria-label="Cambiar modo de operación">
+      <button class="m" id="btnManual" aria-pressed="true">MANUAL</button>
+      <button class="a" id="btnAuto" aria-pressed="false">AUTOMÁTICO</button>
+    </div>
+    <div class="estado" id="estadoModo" aria-live="polite">Modo actual: MANUAL</div>
+  </div>
+  <div class="grupo-estado"><div class="conexion"><span class="punto" id="punto"></span><span id="textoConexion">Simulación (sin ROS)</span></div>
+  <div class="bateria" id="bateria" role="img" aria-label="Nivel de batería"><div class="bat-barra"><i id="batRelleno"></i></div><span id="batTxt">-- %</span></div></div>
+  <button class="parada" id="btnParada">PARADA DE EMERGENCIA</button>
+</header>
+<div class="banner" id="banner" role="alert" hidden></div>
+<div class="banner aviso" id="banner2" role="status" hidden></div>
+
+<main id="app">
+  <div class="col">
+    <section>
+      <h2>Cámaras y sensores de visión</h2>
+      <div class="camaras" id="camaras">
+        <div class="cam principal" data-id="visual" tabindex="0" role="button" aria-label="Cámara de visualización">
+          <canvas></canvas><img alt=""><span class="nombre">Cámara de visualización</span><span class="sin">Sin señal</span>
+        </div>
+        <div class="cam" data-id="flir" tabindex="0" role="button" aria-label="Cámara térmica FLIR">
+          <canvas></canvas><img alt=""><span class="nombre">FLIR térmica</span><span class="sin">Sin señal</span>
+        </div>
+        <div class="cam" data-id="lidar" tabindex="0" role="button" aria-label="LiDAR Oradar MS200">
+          <canvas></canvas><span class="nombre">LiDAR Oradar MS200</span><span class="sin">Sin señal</span>
+        </div>
+      </div>
+      <p style="color:var(--apagado);margin:10px 0 0;font-size:13px">Haz clic en una vista pequeña para ponerla en grande.</p>
+    </section>
+
+    <section>
+      <h2>Sensores</h2>
+      <div class="sensores" id="sensores"></div>
+    </section>
+  </div>
+
+  <div class="col" id="controles">
+    <section>
+      <h2>Comando de manejo</h2>
+      <p class="aviso-auto">El robot está en modo automático. Cambia a manual para conducir.</p>
+      <fieldset id="fsMando">
+        <div class="mando" id="mando">
+          <button data-d="adelante" aria-label="Adelante">▲</button>
+          <button data-d="izquierda" aria-label="Girar a la izquierda">◄</button>
+          <button class="c" data-d="alto">ALTO</button>
+          <button data-d="derecha" aria-label="Girar a la derecha">►</button>
+          <button data-d="atras" aria-label="Atrás">▼</button>
+        </div>
+        <label class="rango">Velocidad máxima: <b id="velTxt">0.30</b> m/s
+          <input type="range" id="vel" min="0.05" max="0.6" step="0.05" value="0.3">
+        </label>
+      </fieldset>
+      <div class="comando"><span>Lineal <b id="cmdLin">0.00</b> m/s</span><span>Angular <b id="cmdAng">0.00</b> rad/s</span></div>
+      <p style="color:var(--apagado);margin:8px 0 0;font-size:13px">Teclado: flechas o W A S D · Espacio = alto · Joystick: stick izquierdo</p>
+    </section>
+
+    <section>
+      <h2>Brazo robótico</h2>
+      <p class="aviso-auto">El robot está en modo automático. Cambia a manual para mover el brazo.</p>
+      <div class="brazo-vistas">
+        <svg id="brazoLado" viewBox="0 0 240 170" role="img" aria-label="Vista lateral del brazo"></svg>
+        <svg id="brazoTop" viewBox="0 0 100 100" role="img" aria-label="Vista superior, giro de la base"></svg>
+      </div>
+      <fieldset id="fsBrazo">
+        <div id="articulaciones"></div>
+        <div class="brazo-btn">
+          <button id="btnHome">Posición inicial</button>
+          <button id="btnPlegar">Plegar para transporte</button>
+        </div>
+      </fieldset>
+    </section>
+
+    <section>
+      <h2>Pinza</h2>
+      <fieldset id="fsPinza">
+        <label class="rango" style="margin-top:0">Apertura: <b id="pinzaTxt">50</b> %
+          <input type="range" id="pinza" min="0" max="100" step="1" value="50">
+        </label>
+        <div class="pinza">
+          <button id="btnAbrir">Abrir</button>
+          <button id="btnCerrar">Cerrar</button>
+        </div>
+      </fieldset>
+      <div class="pinza-info"><span>Posición real <b id="pinzaPos">50</b> %</span></div>
+    </section>
+  </div>
+</main>
+
+<!-- roslib solo se usa si CONFIG.rosbridge tiene valor -->
+<script src="https://cdn.jsdelivr.net/npm/roslib@1.4.1/build/roslib.min.js"></script>
+<script>
+/* ========= CONFIGURACIÓN: normalmente solo cambias la IP de la Jetson ========= */
+// También puedes abrir la página con  index.html?host=192.168.1.50   (o ?host= vacío para el modo demo)
+const _q = new URLSearchParams(location.search);
+const HOST = _q.has("host") ? _q.get("host") : "192.168.1.50";   // IP de la Jetson. "" = demo sin robot
+const DEMO = !HOST;
+const CONFIG = {
+  rosbridge: HOST ? `ws://${HOST}:9090` : "",
+  camaras: {   // web_video_server
+    visual: HOST ? `http://${HOST}:8080/stream?topic=/camera/image_raw&type=mjpeg&quality=60` : "",
+    flir:   HOST ? `http://${HOST}:8080/stream?topic=/flir/image_raw&type=mjpeg&quality=60` : ""
+  },
+  topics: {
+    cmdVel:  "/cmd_vel",            // geometry_msgs/Twist
+    modo:    "/robot_mode",         // std_msgs/String ("manual" | "automatico")
+    modoEst: "/robot_mode_state",   // std_msgs/String ("MANUAL" | "AUTOMATICO") modo real del ESP32
+    pinza:   "/gripper_cmd",        // std_msgs/Float32 (0 cerrada - 100 abierta)
+    pinzaEst:"/gripper_state",      // std_msgs/Float32MultiArray [posición %, 0]
+    brazo:   "/arm_cmd",            // std_msgs/Float32MultiArray [base, hombro, codo, muñeca] grados
+    brazoEst:"/arm_state",          // idem, posición real
+    estop:   "/estop",              // std_msgs/Bool
+    scan:    "/scan",               // sensor_msgs/LaserScan (Oradar MS200)
+    sensores:"/sensores",           // std_msgs/String con JSON
+    heartbeat:"/dashboard_heartbeat", // std_msgs/Bool, latido hacia la Jetson (señal de la estación base)
+    estado:  "/robot_status"         // std_msgs/String JSON {estado, perdida, puntos, x, y}
+  },
+  lidarRangoMax: 12,                // m
+  lidarOffsetGrados: 0              // si el LiDAR está girado respecto al frente del robot
+};
+
+/* Definición de sensores: clave del JSON, nombre, unidad, umbrales */
+const SENSORES = [
+  {k:"co",   n:"Monóxido (CO)",    u:"ppm", d:0, aviso:25,  alerta:50},
+  {k:"ch4",  n:"Metano (CH₄)",     u:"%",   d:2, aviso:1.0, alerta:1.5},
+  {k:"o2",   n:"Oxígeno (O₂)",     u:"%",   d:1, bajoAviso:20.0, bajoAlerta:19.5},
+  {k:"temp", n:"Temperatura",      u:"°C",  d:1, aviso:40,  alerta:65},
+  {k:"hum",  n:"Humedad",          u:"%",   d:0, aviso:85,  alerta:95},
+  {k:"pres", n:"Presión",          u:"hPa", d:0},
+  {k:"inc",  n:"Inclinación",      u:"°",   d:1, aviso:15,  alerta:25},
+  {k:"rumbo",n:"Rumbo",            u:"°",   d:0},
+  {k:"front",n:"Obstáculo frontal",u:"m",   d:2, bajoAviso:1.0, bajoAlerta:0.4}
+];
+
+/* ========= ESTADO ========= */
+const $ = id => document.getElementById(id);
+const estado = { modo:"manual", lin:0, ang:0, dir:null, pinza:50, datos:{}, scan:null, ros:null, pubs:{}, ultimoSensores:0, scanTs:0, cambioModo:0, mov:false, armSync:false, pinzaSync:false };
+
+/* ========= ROS (rosbridge en la Jetson) ========= */
+function conexion(ok,txt){ $("punto").className="punto"+(ok?" ok":""); $("textoConexion").textContent=txt; }
+function pub(nombre,msg){ const p=estado.pubs[nombre]; if(p && estado.ros && estado.ros.isConnected) p.publish(new ROSLIB.Message(msg)); }
+const simulando = () => DEMO;
+function iniciarROS(){
+  if(DEMO) return;
+  if(typeof ROSLIB==="undefined"){ conexion(false,"No se cargó roslib (el PC necesita internet)"); return; }
+  const ros = new ROSLIB.Ros({url:CONFIG.rosbridge}); estado.ros = ros;
+  const T = CONFIG.topics;
+  const topic=(name,type,opts)=>new ROSLIB.Topic(Object.assign({ros,name,messageType:type},opts||{}));
+  ros.on("connection",()=>{ conexion(true,"Conectado a la Jetson ("+HOST+")"); estado.armSync=false; estado.pinzaSync=false; });
+  ros.on("close",()=>{ conexion(false,"Sin conexión con la Jetson, reintentando…"); setTimeout(iniciarROS,3000); });
+  ros.on("error",()=>{});
+  estado.pubs = {
+    cmdVel:topic(T.cmdVel,"geometry_msgs/Twist"), modo:topic(T.modo,"std_msgs/String"),
+    pinza:topic(T.pinza,"std_msgs/Float32"), brazo:topic(T.brazo,"std_msgs/Float32MultiArray"),
+    estop:topic(T.estop,"std_msgs/Bool"), hb:topic(T.heartbeat,"std_msgs/Bool")
+  };
+  topic(T.scan,"sensor_msgs/LaserScan",{throttle_rate:100,queue_length:1}).subscribe(m=>{ estado.scan=m; estado.scanTs=Date.now(); });
+  topic(T.sensores,"std_msgs/String").subscribe(m=>{
+    try{
+      Object.assign(estado.datos,JSON.parse(m.data)); estado.ultimoSensores=Date.now();
+      const al=!!estado.datos.alerta; $("banner").hidden=!al;
+      if(al) $("banner").textContent="ALERTA: el robot se detuvo por gas (CO, metano u oxígeno) o temperatura alta. No se puede pasar a automático hasta que se normalice.";
+    }catch(e){}
+  });
+  topic(T.modoEst,"std_msgs/String").subscribe(m=>{
+    if(Date.now()-estado.cambioModo<1500) return;      // da tiempo al ESP32 a confirmar el cambio pedido
+    const nuevo = m.data==="AUTOMATICO" ? "automatico" : "manual";
+    if(nuevo!==estado.modo) ponerModo(nuevo,false);
+  });
+  topic(T.estado,"std_msgs/String").subscribe(m=>{
+    try{
+      const st=JSON.parse(m.data), b=$("banner2"); estado.robot=st;
+      if(st.estado==="RTH"){ b.hidden=false; b.textContent="Sin señal de la estación base: el robot regresa solo a la base ("+Math.max(0,st.puntos-1)+" puntos por recorrer). La parada de emergencia cancela el retorno."; }
+      else if(st.estado==="ESPERA"){ b.hidden=false; b.textContent="El robot está detenido y espera. Elige MANUAL o AUTOMÁTICO para continuar."; }
+      else b.hidden=true;
+    }catch(e){}
+  });
+  topic(T.brazoEst,"std_msgs/Float32MultiArray").subscribe(m=>{
+    m.data.forEach((v,i)=>{ if(ARM[i]) $("real_"+ARM[i].k).textContent="real "+v.toFixed(0)+"°"; });
+    if(!estado.armSync){ estado.armSync=true; ARM.forEach((a,i)=>{ a.v=Math.round(m.data[i]); $("in_"+a.k).value=a.v; $("out_"+a.k).textContent=a.v+"°"; }); dibujarBrazo(); }
+  });
+  topic(T.pinzaEst,"std_msgs/Float32MultiArray").subscribe(m=>{
+    $("pinzaPos").textContent=m.data[0].toFixed(0);
+    if(!estado.pinzaSync){ estado.pinzaSync=true; estado.pinza=Math.round(m.data[0]); $("pinza").value=estado.pinza; $("pinzaTxt").textContent=estado.pinza; }
+  });
+}
+
+/* ========= MODO ========= */
+function ponerModo(m, enviar=true){
+  estado.modo=m;
+  const auto = m==="automatico";
+  $("btnManual").setAttribute("aria-pressed",!auto);
+  $("btnAuto").setAttribute("aria-pressed",auto);
+  $("estadoModo").textContent="Modo actual: "+(auto?"AUTOMÁTICO":"MANUAL");
+  $("estadoModo").classList.toggle("auto",auto);
+  $("cabecera").classList.toggle("auto",auto);
+  $("controles").classList.toggle("es-auto",auto);
+  $("fsMando").disabled=auto; $("fsPinza").disabled=auto; $("fsBrazo").disabled=auto;
+  if(auto) detener();
+  if(enviar){ estado.cambioModo=Date.now(); pub("modo",{data:m}); }
+}
+$("btnManual").onclick=()=>ponerModo("manual");
+$("btnAuto").onclick=()=>ponerModo("automatico");
+
+/* ========= MANEJO ========= */
+const DIRS = {adelante:[1,0], atras:[-1,0], izquierda:[0,1], derecha:[0,-1], alto:[0,0]};
+function fijarDir(d){ estado.dir=d; }
+function detener(){ estado.dir=null; estado.lin=0; estado.ang=0; mostrarCmd(); pub("cmdVel",{linear:{x:0,y:0,z:0},angular:{x:0,y:0,z:0}}); }
+function mostrarCmd(){ $("cmdLin").textContent=estado.lin.toFixed(2); $("cmdAng").textContent=estado.ang.toFixed(2); }
+document.querySelectorAll("#mando button").forEach(b=>{
+  const d=b.dataset.d;
+  const ini=e=>{e.preventDefault(); fijarDir(d); marcarBoton(d)};
+  const fin=()=>{ if(d!=="alto"){ fijarDir(null); marcarBoton(null);} };
+  b.addEventListener("pointerdown",ini); b.addEventListener("pointerup",fin);
+  b.addEventListener("pointerleave",fin); b.addEventListener("pointercancel",fin);
+});
+function marcarBoton(d){ document.querySelectorAll("#mando button").forEach(b=>b.classList.toggle("activo",b.dataset.d===d&&d!=="alto")); }
+const TECLAS={ArrowUp:"adelante",w:"adelante",ArrowDown:"atras",s:"atras",ArrowLeft:"izquierda",a:"izquierda",ArrowRight:"derecha",d:"derecha"," ":"alto"};
+addEventListener("keydown",e=>{ const d=TECLAS[e.key.length===1?e.key.toLowerCase():e.key]; if(!d||estado.modo!=="manual"||e.target.matches("input")) return; e.preventDefault(); fijarDir(d); marcarBoton(d); });
+addEventListener("keyup",e=>{ const d=TECLAS[e.key.length===1?e.key.toLowerCase():e.key]; if(d&&d!=="alto"){ fijarDir(null); marcarBoton(null);} });
+$("vel").oninput=()=>$("velTxt").textContent=(+$("vel").value).toFixed(2);
+
+/* Envío de comando a 10 Hz */
+setInterval(()=>{
+  if(estado.modo!=="manual") return;
+  const v=+$("vel").value, [l,a]=DIRS[estado.dir]||[0,0];
+  estado.lin=l*v; estado.ang=a*v*2;
+  const gp=[...(navigator.getGamepads?navigator.getGamepads():[])].find(g=>g&&g.connected); let jug=false;
+  if(gp){ const y=-gp.axes[1], x=-gp.axes[0]; if(Math.abs(y)>.15||Math.abs(x)>.15){ estado.lin=(Math.abs(y)>.15?y:0)*v; estado.ang=(Math.abs(x)>.15?x:0)*v*2; jug=true; } }
+  mostrarCmd();
+  if(estado.dir||jug){ pub("cmdVel",{linear:{x:estado.lin,y:0,z:0},angular:{x:0,y:0,z:estado.ang}}); estado.mov=true; }
+  else if(estado.mov){ pub("cmdVel",{linear:{x:0,y:0,z:0},angular:{x:0,y:0,z:0}}); estado.mov=false; }
+},100);
+
+/* ========= PARADA DE EMERGENCIA ========= */
+$("btnParada").onclick=()=>{ detener(); pub("estop",{data:true}); ponerModo("manual"); };
+
+/* ========= BRAZO ROBÓTICO ========= */
+const ARM = [   // 3 articulaciones (SERVO1-3). SERVO4 es la pinza. 0° = centro del servo, rango ±90°
+  {k:"base",   n:"Base",    min:-90, max:90, v:0, casa:0, plegado:0},
+  {k:"hombro", n:"Hombro",  min:-90, max:90, v:0, casa:0, plegado:-85},
+  {k:"codo",   n:"Codo",    min:-90, max:90, v:0, casa:0, plegado:85}
+];
+$("articulaciones").innerHTML=ARM.map(a=>`<div class="art"><span>${a.n}</span>
+  <input type="range" id="in_${a.k}" min="${a.min}" max="${a.max}" step="1" value="${a.v}" aria-label="${a.n}">
+  <div><output id="out_${a.k}">0°</output><small id="real_${a.k}">real --</small></div></div>`).join("");
+function enviarBrazo(){ pub("brazo",{data:ARM.map(a=>a.v)}); dibujarBrazo(); }
+function ponerBrazo(clave,enviar=true){ ARM.forEach(a=>{ a.v=a[clave]; $("in_"+a.k).value=a.v; $("out_"+a.k).textContent=a.v+"°"; if(simulando()) $("real_"+a.k).textContent="real "+a.v+"°"; }); if(enviar) enviarBrazo(); else dibujarBrazo(); }
+ARM.forEach(a=>$("in_"+a.k).oninput=()=>{
+  a.v=+$("in_"+a.k).value; $("out_"+a.k).textContent=a.v+"°";
+  if(simulando()) $("real_"+a.k).textContent="real "+a.v+"°";
+  enviarBrazo();
+});
+$("btnHome").onclick=()=>ponerBrazo("casa");
+$("btnPlegar").onclick=()=>ponerBrazo("plegado");
+function dibujarBrazo(){
+  const [b,h,c]=ARM.map(a=>a.v*Math.PI/180), m=0, L=[75,65,35];
+  // vista lateral: 0° del hombro = brazo en vertical, positivo hacia delante
+  let x=70,y=150, ang=b*0; const pts=[[x,y]];
+  let acum=0;
+  [h,c,m].forEach((q,i)=>{ acum+=q; x+=Math.sin(acum)*L[i]; y-=Math.cos(acum)*L[i]; pts.push([x,y]); });
+  const col=["#5d7a52","#7d9a6e","#a68d5f"];
+  let svg='<line x1="10" y1="150" x2="230" y2="150" stroke="#bcb29a" stroke-width="3"/><rect x="50" y="146" width="40" height="14" rx="3" fill="#8a8068"/>';
+  for(let i=0;i<3;i++) svg+=`<line x1="${pts[i][0]}" y1="${pts[i][1]}" x2="${pts[i+1][0]}" y2="${pts[i+1][1]}" stroke="${col[i]}" stroke-width="9" stroke-linecap="round"/>`;
+  pts.forEach(p=>svg+=`<circle cx="${p[0]}" cy="${p[1]}" r="5" fill="#ece7da" stroke="#2d3329" stroke-width="2"/>`);
+  $("brazoLado").innerHTML=svg;
+  // vista superior: giro de la base
+  const bx=50+Math.sin(b)*38, by=50-Math.cos(b)*38;
+  $("brazoTop").innerHTML=`<circle cx="50" cy="50" r="40" fill="none" stroke="#bcb29a" stroke-width="2"/><line x1="50" y1="50" x2="${bx}" y2="${by}" stroke="#5d7a52" stroke-width="6" stroke-linecap="round"/><circle cx="50" cy="50" r="5" fill="#ece7da" stroke="#2d3329" stroke-width="2"/><text x="50" y="97" text-anchor="middle" font-size="9" fill="#68705c">frente ▲</text>`;
+}
+
+/* ========= PINZA ========= */
+function enviarPinza(v){ estado.pinza=v; $("pinza").value=v; $("pinzaTxt").textContent=v; pub("pinza",{data:v}); }
+$("pinza").oninput=()=>enviarPinza(+$("pinza").value);
+$("btnAbrir").onclick=()=>enviarPinza(100);
+$("btnCerrar").onclick=()=>enviarPinza(0);
+
+/* ========= SENSORES ========= */
+$("sensores").innerHTML=SENSORES.map(s=>`<div class="sensor" id="s_${s.k}"><span>${s.n}</span><b>--</b><small>${s.u}</small></div>`).join("");
+function pintarSensores(){
+  const vivo = DEMO || Date.now()-estado.ultimoSensores<3000;
+  SENSORES.forEach(s=>{
+    const el=$("s_"+s.k), v=estado.datos[s.k];
+    if((!vivo && s.k!=="front") || v==null){ el.querySelector("b").textContent="--"; el.className="sensor"; return; }
+    el.querySelector("b").textContent=(+v).toFixed(s.d);
+    let nivel="";
+    if(s.alerta!==undefined){ if(v>=s.alerta) nivel="alerta"; else if(v>=s.aviso) nivel="aviso"; }
+    if(s.bajoAlerta!==undefined){ if(v<=s.bajoAlerta) nivel="alerta"; else if(v<=s.bajoAviso) nivel="aviso"; }
+    el.className="sensor "+nivel;
+  });
+  pintarBateria(vivo);
+}
+function pintarBateria(vivo){
+  const pct=estado.datos.bat, v=estado.datos.bat_v, r=$("batRelleno"), t=$("batTxt");
+  if(!vivo || pct==null){ r.style.width="0"; t.textContent="-- %"; $("bateria").className="bateria"; return; }
+  r.style.width=Math.max(4,Math.min(100,pct))+"%";
+  t.textContent=Math.round(pct)+" %"+(v!=null?"  ("+(+v).toFixed(1)+" V)":"");
+  $("bateria").className="bateria "+(pct<=15?"alerta":pct<=30?"aviso":"");
+}
+
+/* ========= CÁMARAS ========= */
+const camEls={}; document.querySelectorAll(".cam").forEach(c=>{
+  camEls[c.dataset.id]=c;
+  c.onclick=()=>ponerPrincipal(c.dataset.id);
+  c.onkeydown=e=>{ if(e.key==="Enter") ponerPrincipal(c.dataset.id); };
+});
+function ponerPrincipal(id){ Object.entries(camEls).forEach(([k,c])=>c.classList.toggle("principal",k===id)); }
+function marcarCam(id,ok){ camEls[id].classList.toggle("offline",!ok); }
+["visual","flir"].forEach(id=>{
+  const img=camEls[id].querySelector("img"), url=CONFIG.camaras[id];
+  if(!url){ img.style.display="none"; return; }
+  const cargar=()=>{ img.src=url+"&t="+Date.now(); };
+  img.onload=()=>{ img.style.display="block"; marcarCam(id,true); };
+  img.onerror=()=>{ img.style.display="none"; marcarCam(id,false); setTimeout(cargar,3000); };
+  cargar();
+});
+function ajustar(cv){ const r=cv.getBoundingClientRect(),d=devicePixelRatio||1; if(cv.width!==Math.round(r.width*d)){cv.width=Math.round(r.width*d);cv.height=Math.round(r.height*d);} return [cv.getContext("2d"),cv.width,cv.height]; }
+
+function dibujarVisual(t){
+  const [g,w,h]=ajustar(camEls.visual.querySelector("canvas"));
+  const f=g.createLinearGradient(0,0,0,h); f.addColorStop(0,"#252b24"); f.addColorStop(.5,"#4a4d41"); f.addColorStop(1,"#1d1f19");
+  g.fillStyle=f; g.fillRect(0,0,w,h);
+  g.strokeStyle="#6e7160"; g.lineWidth=2;
+  for(let i=1;i<7;i++){ const k=((i+t/700)%7)/7, s=k*k; g.strokeRect(w/2-w*s*.5,h/2-h*s*.4,w*s,h*s*.8); }
+  g.fillStyle="#b9c0ad"; g.font=`${14*(devicePixelRatio||1)}px Barlow,sans-serif`; g.fillText("Imagen simulada · configura CONFIG.camaras.visual",12,h-14);
+}
+function dibujarFlir(t){
+  const [g,w,h]=ajustar(camEls.flir.querySelector("canvas"));
+  g.fillStyle="#1a0f3c"; g.fillRect(0,0,w,h);
+  [[.35,.55,.28,"#ffe36a"],[.7,.4,.18,"#ff8a3d"],[.5,.7,.35,"#a02c6e"]].forEach(([x,y,r,c],i)=>{
+    const cx=w*x+Math.sin(t/1800+i)*10, cy=h*y, R=Math.min(w,h)*r;
+    const gr=g.createRadialGradient(cx,cy,0,cx,cy,R); gr.addColorStop(0,c); gr.addColorStop(1,"rgba(26,15,60,0)");
+    g.fillStyle=gr; g.fillRect(0,0,w,h);
+  });
+  g.fillStyle="#fff"; g.font=`${13*(devicePixelRatio||1)}px Barlow,sans-serif`; g.fillText("Imagen simulada · configura CONFIG.camaras.flir",12,h-14);
+}
+function dibujarLidar(t){
+  const [g,w,h]=ajustar(camEls.lidar.querySelector("canvas"));
+  g.fillStyle="#232a22"; g.fillRect(0,0,w,h);
+  const cx=w/2, cy=h/2, R=Math.min(w,h)/2-10, esc=R/CONFIG.lidarRangoMax, d=devicePixelRatio||1;
+  g.strokeStyle="#3d4a3a"; g.lineWidth=1; g.fillStyle="#8e9c86"; g.font=`${11*d}px Barlow,sans-serif`;
+  for(let m=3;m<=CONFIG.lidarRangoMax;m+=3){ g.beginPath(); g.arc(cx,cy,m*esc,0,7); g.stroke(); g.fillText(m+" m",cx+4,cy-m*esc-3); }
+  g.beginPath(); g.moveTo(cx,cy-R); g.lineTo(cx,cy+R); g.moveTo(cx-R,cy); g.lineTo(cx+R,cy); g.stroke();
+  let pts=[];
+  if(estado.scan && Date.now()-estado.scanTs<2000){ const s=estado.scan, off=CONFIG.lidarOffsetGrados*Math.PI/180; s.ranges.forEach((r,i)=>{ if(r!==null&&isFinite(r)&&r>s.range_min&&r<=s.range_max) pts.push([s.angle_min+i*s.angle_increment+off,r]); }); }
+  else if(DEMO) for(let i=0;i<360;i++){ const a=i*Math.PI/180; // túnel simulado: pasillo de 4 m x 10 m
+    const r=Math.min(2/Math.max(Math.abs(Math.sin(a)),.001),5/Math.max(Math.abs(Math.cos(a)),.001),CONFIG.lidarRangoMax)+Math.sin(i*3+t/400)*.03; pts.push([a,r]); }
+  g.fillStyle="#a9c79a";
+  pts.forEach(([a,r])=>{ g.fillRect(cx-Math.sin(a)*r*esc-d,cy-Math.cos(a)*r*esc-d,2*d,2*d); });
+  g.fillStyle="#e3d8bd"; g.beginPath(); g.moveTo(cx,cy-9*d); g.lineTo(cx+6*d,cy+7*d); g.lineTo(cx-6*d,cy+7*d); g.fill();
+  const frente=pts.filter(([a])=>Math.abs(Math.atan2(Math.sin(a),Math.cos(a)))<.17).map(p=>p[1]);
+  const fresco = DEMO || (estado.scan && Date.now()-estado.scanTs<2000);
+  estado.datos.front = fresco ? (frente.length?Math.min(...frente):CONFIG.lidarRangoMax) : null;
+}
+function bucle(t){
+  if(!CONFIG.camaras.visual) { dibujarVisual(t); marcarCam("visual",true); }
+  if(!CONFIG.camaras.flir)   { dibujarFlir(t);   marcarCam("flir",true); }
+  dibujarLidar(t);
+  marcarCam("lidar", DEMO || Date.now()-estado.scanTs<2000);
+  requestAnimationFrame(bucle);
+}
+
+/* ========= SIMULACIÓN DE DATOS (solo sin ROS) ========= */
+setInterval(()=>{
+  if(!DEMO) return;
+  const r=(a,b)=>a+Math.random()*(b-a), d=estado.datos;
+  d.co=Math.max(0,(d.co??12)+r(-2,2.2)); d.temp=(d.temp??27)+r(-.2,.25); d.hum=70+r(-3,3);
+  d.pres=1008+r(-1,1); d.ch4=Math.max(0,(d.ch4??.4)+r(-.05,.06)); d.o2=20.6+r(-.3,.3); d.bat=Math.max(0,(d.bat??88)-.05); d.bat_v=21+d.bat*.08; d.inc=Math.abs(r(0,6)); d.rumbo=((d.rumbo??0)+r(-1,1)+360)%360;
+  estado.ultimoSensores=Date.now();
+  const pos=+$("pinzaPos").textContent, dif=estado.pinza-pos;
+  $("pinzaPos").textContent=(pos+Math.sign(dif)*Math.min(Math.abs(dif),10)).toFixed(0);
+},1000);
+setInterval(pintarSensores,500);
+
+/* ========= ARRANQUE ========= */
+setInterval(()=>pub("hb",{data:true}),500);
+conexion(false, DEMO ? "Modo demo (sin robot)" : "Conectando con la Jetson…");
+iniciarROS(); ponerModo("manual",false); ponerBrazo("casa",false); bucle(0);
+</script>
+</body>
+</html>
