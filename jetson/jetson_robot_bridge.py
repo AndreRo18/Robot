@@ -17,7 +17,7 @@ Entradas (desde el dashboard):
   /scan                sensor_msgs/LaserScan       LiDAR Oradar MS200
 
 Salidas (hacia el dashboard):
-  /sensores          std_msgs/String (JSON)        temp, hum, pres, co, ch4, o2, bat, bat_v, inc, rumbo, alerta
+  /sensores          std_msgs/String (JSON)        temp, hum, pres, co, ch4, o2, h2s, bat, bat_v, inc, rumbo, alerta
   /robot_mode_state  std_msgs/String               "MANUAL" | "AUTOMATICO" (modo real del ESP32)
   /robot_status      std_msgs/String (JSON)        estado, perdida, puntos, x, y
   /arm_state         std_msgs/Float32MultiArray
@@ -188,7 +188,7 @@ class JetsonRobotBridge(Node):
             'temp': d.get('TEMP'), 'hum': d.get('HUM'), 'pres': d.get('PRES'),
             'co': d.get('CO'), 'co_raw': d.get('CO_RAW'),
             'inc': inc, 'rumbo': d.get('RUMBO'), 'alerta': alerta,
-            'ch4': d.get('CH4'), 'o2': d.get('O2'), 'bat': d.get('BAT'), 'bat_v': d.get('BAT_V'),
+            'ch4': d.get('CH4'), 'o2': d.get('O2'), 'h2s': d.get('H2S'), 'bat': d.get('BAT'), 'bat_v': d.get('BAT_V'),
         }
         self.pub_sensores.publish(String(data=json.dumps(datos)))
         if isinstance(d.get('ARM'), list):
