@@ -56,6 +56,7 @@ const float   CO_PPM_POR_CUENTA = 50.0 / 22000.0;    // CALIBRAR con tu sensor
 #define HAY_BATERIA 1
 #define HAY_CH4     1
 #define HAY_O2      1
+#define HAY_H2S     1   // sulfuro de hidrógeno: segundo ADS1115 (dirección 0x49, pin ADDR a VDD), canal A0
 const float ADS_LSB_V   = 0.0001875;            // volts por cuenta con la ganancia por defecto (±6.144 V)
 const float BAT_DIVISOR = 11.0;                 // divisor resistivo hacia A1: (R1+R2)/R2, p. ej. 100k + 10k
 const int   BAT_CELDAS  = 7;                    // celdas 18650 en serie (7S = 25.9 V nominales)
@@ -63,6 +64,8 @@ const float CH4_PCT_POR_CUENTA = 2.0 / 20000.0; // CALIBRAR: % de metano por cue
 const float O2_PCT_POR_CUENTA  = 20.9 / 16000.0;// CALIBRAR: % de oxígeno por cuenta
 const float CH4_ALERTA = 1.5;                   // % de metano que detiene el robot
 const float O2_ALERTA  = 19.5;                  // % de oxígeno por debajo del cual se detiene
+const float H2S_PPM_POR_CUENTA = 20.0 / 20000.0;// CALIBRAR: ppm de H2S por cuenta
+const float H2S_ALERTA = 10.0;                  // ppm de H2S que detiene el robot (techo NIOSH: 10 ppm)
 
 enum ModoOperacion { MODO_MANUAL, MODO_AUTOMATICO };
 ModoOperacion modoActual = MODO_MANUAL;   // siempre arranca en manual
@@ -89,12 +92,13 @@ void IRAM_ATTR isrEncDer() { ticksDer = ticksDer + (digitalRead(ENC2_B) ? -ENC_S
 
 // --- Sensores ---
 Adafruit_BME280 bme;
-Adafruit_ADS1115 ads;
+Adafruit_ADS1115 ads;    // 0x48: A0 CO, A1 batería, A2 metano, A3 oxígeno
+Adafruit_ADS1115 ads2;   // 0x49: A0 sulfuro de hidrógeno (H2S)
 Adafruit_BNO055 bno = Adafruit_BNO055(55, 0x28);
-bool bmeOk = false, adsOk = false, bnoOk = false;
+bool bmeOk = false, adsOk = false, ads2Ok = false, bnoOk = false;
 float temp = NAN, hum = NAN, pres = NAN;
 int16_t coRaw = 0;
-float batV = NAN, batPct = NAN, ch4 = NAN, o2 = NAN;
+float batV = NAN, batPct = NAN, ch4 = NAN, o2 = NAN, h2s = NAN;
 bool alertaActiva = false;
 
 // --- Estado ---
@@ -131,6 +135,11 @@ void setup() {
   bmeOk = bme.begin(0x76);
   adsOk = ads.begin();
   if (adsOk) ads.setDataRate(RATE_ADS1115_860SPS);   // 4 lecturas seguidas sin demorar el lazo
+#if HAY_H2S
+  ads2Ok = ads2.begin(0x49);
+  if (ads2Ok) ads2.setDataRate(RATE_ADS1115_860SPS);
+  else Serial.println("[WARN] Segundo ADS1115 (0x49, H2S) no detectado");
+#endif
   bnoOk = bno.begin(OPERATION_MODE_IMUPLUS);   // sin magnetómetro: el rumbo no se altera por el metal de la mina
   if (!bmeOk) Serial.println("[WARN] Sensor BME280 no detectado");
   if (!adsOk) Serial.println("[WARN] ADS1115 no detectado");
@@ -305,6 +314,9 @@ void leerSensores() {
     o2 = ads.readADC_SingleEnded(3) * O2_PCT_POR_CUENTA;
 #endif
   }
+#if HAY_H2S
+  if (ads2Ok) h2s = fmaxf(0.0f, ads2.readADC_SingleEnded(0) * H2S_PPM_POR_CUENTA);
+#endif
 }
 
 // Curva de descarga aproximada de una celda 18650 sin carga: voltaje por celda -> porcentaje
@@ -321,9 +333,11 @@ float porcentajeBateria(float vCelda) {
 
 void verificarSeguridad() {
   bool critico = (coRaw > CO_RAW_ALERTA) || (!isnan(temp) && temp > TEMP_ALERTA)
-              || (!isnan(ch4) && ch4 >= CH4_ALERTA) || (!isnan(o2) && o2 <= O2_ALERTA);
+              || (!isnan(ch4) && ch4 >= CH4_ALERTA) || (!isnan(o2) && o2 <= O2_ALERTA)
+              || (!isnan(h2s) && h2s >= H2S_ALERTA);
   bool normal  = (coRaw < CO_RAW_ALERTA - 2000) && (isnan(temp) || temp < TEMP_ALERTA - 5)
-              && (isnan(ch4) || ch4 < CH4_ALERTA - 0.3) && (isnan(o2) || o2 > O2_ALERTA + 0.3);
+              && (isnan(ch4) || ch4 < CH4_ALERTA - 0.3) && (isnan(o2) || o2 > O2_ALERTA + 0.3)
+              && (isnan(h2s) || h2s < H2S_ALERTA - 2.0);
 
   if (!alertaActiva && critico) {
     alertaActiva = true;
@@ -356,7 +370,7 @@ void enviarTelemetria() {
   t += ",\"TEMP\":" + num(temp) + ",\"HUM\":" + num(hum) + ",\"PRES\":" + num(pres, 1);
   t += ",\"CO_RAW\":" + String(coRaw) + ",\"CO\":" + num(coRaw * CO_PPM_POR_CUENTA, 1);
   t += ",\"ROLL\":" + num(roll, 1) + ",\"PITCH\":" + num(pitch, 1) + ",\"RUMBO\":" + num(rumbo, 1);
-  t += ",\"BAT_V\":" + num(batV, 2) + ",\"BAT\":" + num(batPct, 0) + ",\"CH4\":" + num(ch4, 2) + ",\"O2\":" + num(o2, 1);
+  t += ",\"BAT_V\":" + num(batV, 2) + ",\"BAT\":" + num(batPct, 0) + ",\"CH4\":" + num(ch4, 2) + ",\"O2\":" + num(o2, 1) + ",\"H2S\":" + num(h2s, 1);
   t += ",\"ENC\":[" + String(tIzq) + "," + String(tDer) + "]";
   t += ",\"ARM\":[";
   for (int i = 0; i < 3; i++) { t += String(posActual[i] - 90, 0); if (i < 2) t += ","; }
