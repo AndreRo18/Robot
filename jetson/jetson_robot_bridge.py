@@ -37,6 +37,11 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import LaserScan
 from std_msgs.msg import Bool, Float32, Float32MultiArray, String
 
+try:
+    from .cloud_gateway import CloudGateway
+except ImportError:                      # ejecutado como script suelto
+    from cloud_gateway import CloudGateway
+
 
 def norm_ang(a: float) -> float:
     return math.atan2(math.sin(a), math.cos(a))
@@ -71,6 +76,11 @@ class JetsonRobotBridge(Node):
         # Señal de la estación base
         self.hb_timeout = p('hb_timeout_s', 1.5).value           # sin latido por más de esto = sin señal
         self.rth_after = p('rth_after_s', 5.0).value             # el diagrama: "¿> 5 s?"
+        # Pasarela a la nube (panel web en Vercel). Vacío = desactivada.
+        self.cloud_url = p('cloud_url', '').value                # p. ej. https://tu-proyecto.vercel.app
+        self.cloud_key = p('cloud_key', '').value                # = ROBOT_API_KEY del servidor
+        self.cloud_push = p('cloud_push_s', 1.0).value
+        self.cloud_poll = p('cloud_poll_s', 0.25).value
 
         self.ser = None
         self.ultimo_intento = 0.0
@@ -93,6 +103,10 @@ class JetsonRobotBridge(Node):
         self.t_pub = 0.0
         self.n_tick = 0
         self.ultimo_dato = {}
+        self.arm_real = None
+        self.grip_real = None
+        self.cloud = None
+        self.drive_nube = False
 
         self.abrir_serial()
 
@@ -112,6 +126,12 @@ class JetsonRobotBridge(Node):
 
         self.create_timer(0.02, self.serial_read)
         self.create_timer(0.1, self.tick)
+        if self.cloud_url and self.cloud_key:
+            self.cloud = CloudGateway(self.cloud_url, self.cloud_key, self.cloud_push, self.cloud_poll,
+                                      snapshot=self.telemetria_nube, log=lambda m: self.get_logger().info(m))
+            self.cloud.iniciar()
+            self.create_timer(0.05, self.aplicar_ordenes)
+            self.get_logger().info(f'Pasarela a la nube activa: {self.cloud_url}')
         self.get_logger().info('Puente Jetson iniciado')
 
     # ---------- Serial ----------
@@ -190,10 +210,13 @@ class JetsonRobotBridge(Node):
             'inc': inc, 'rumbo': d.get('RUMBO'), 'alerta': alerta,
             'ch4': d.get('CH4'), 'o2': d.get('O2'), 'h2s': d.get('H2S'), 'bat': d.get('BAT'), 'bat_v': d.get('BAT_V'),
         }
+        self.ultimo_dato = datos
         self.pub_sensores.publish(String(data=json.dumps(datos)))
         if isinstance(d.get('ARM'), list):
+            self.arm_real = [float(x) for x in d['ARM']]
             self.pub_arm.publish(Float32MultiArray(data=[float(x) for x in d['ARM']]))
         if d.get('GRIP') is not None:
+            self.grip_real = float(d['GRIP'])
             self.pub_grip.publish(Float32MultiArray(data=[float(d['GRIP']), 0.0]))
 
     # ---------- Odometría y camino recorrido ----------
@@ -271,6 +294,67 @@ class JetsonRobotBridge(Node):
 
     def grip_cb(self, m: Float32):
         self.enviar(f'GRIP:{max(0.0, min(100.0, m.data)):.0f}')
+
+    # ---------- Nube ----------
+    def lidar_72(self):
+        """72 sectores de 5° en cm; el 0 es el frente y se avanza en sentido horario. 0 = sin lectura."""
+        if time.monotonic() - self.scan_t > 2.0 or not self.pts:
+            return None
+        sec = [0] * 72
+        for a, r in self.pts:
+            i = int(((-a) % 360.0) // 5.0) % 72
+            cm = int(round(r * 100))
+            if sec[i] == 0 or cm < sec[i]:
+                sec[i] = cm
+        return sec
+
+    def telemetria_nube(self):
+        # Se ejecuta en el hilo de la pasarela: solo lee atributos (lecturas atómicas), no toca ROS.
+        d = dict(self.ultimo_dato or {})
+        t = {k: d.get(k) for k in ('co', 'ch4', 'o2', 'h2s', 'temp', 'hum', 'pres', 'bat', 'bat_v', 'inc')}
+        t['heading'] = d.get('rumbo')
+        t['alert'] = d.get('alerta', 0)
+        t['mode'] = 'auto' if self.modo == 'AUTOMATICO' else 'manual'
+        t['state'] = self.estado
+        t['points'] = len(self.crumbs)
+        t['x'], t['y'] = round(self.x, 2), round(self.y, 2)
+        if self.arm_real:
+            t['arm'] = self.arm_real[:3]
+        if self.grip_real is not None:
+            t['grip'] = self.grip_real
+        lid = self.lidar_72()
+        if lid:
+            t['lidar'] = lid
+        return {k: v for k, v in t.items() if v is not None}
+
+    def aplicar_ordenes(self):
+        """Vacía la cola de la pasarela y reutiliza los mismos callbacks que los topics de ROS."""
+        q = self.cloud.ordenes
+        while True:
+            try:
+                o = q.get_nowait()
+            except Exception:  # cola vacía
+                break
+            t = o['t']
+            if t == 'hb':
+                if o['vivo']:
+                    self.last_hb = time.monotonic()
+            elif t == 'estop':
+                self.drive_nube = False
+                self.estop_cb(Bool(data=True))
+            elif t == 'mode':
+                self.modo_cb(String(data='automatico' if o['v'] == 'auto' else 'manual'))
+            elif t == 'arm' and o.get('v'):
+                self.arm_cb(Float32MultiArray(data=[float(x) for x in o['v']]))
+            elif t == 'grip' and o.get('v') is not None:
+                self.grip_cb(Float32(data=float(o['v'])))
+            elif t == 'drive':
+                mov = abs(o['lin']) > 1e-3 or abs(o['ang']) > 1e-3
+                if mov or self.drive_nube:           # el cero solo se envía al terminar de conducir
+                    m = Twist()
+                    m.linear.x, m.angular.z = o['lin'], o['ang']
+                    self.cmd_vel_cb(m)
+                self.drive_nube = mov
 
     # ---------- LiDAR ----------
     def scan_cb(self, msg: LaserScan):

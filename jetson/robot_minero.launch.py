@@ -19,6 +19,10 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     aqui = os.path.dirname(os.path.realpath(__file__))
+    # Pasarela a la nube (opcional): export CLOUD_URL=https://tu-proyecto.vercel.app CLOUD_KEY=<ROBOT_API_KEY>
+    nube = []
+    if os.environ.get('CLOUD_URL') and os.environ.get('CLOUD_KEY'):
+        nube = ['--ros-args', '-p', 'cloud_url:=' + os.environ['CLOUD_URL'], '-p', 'cloud_key:=' + os.environ['CLOUD_KEY']]
     return LaunchDescription([
         Node(package='rosbridge_server', executable='rosbridge_websocket',
              name='rosbridge_websocket', parameters=[{'port': 9090}]),
@@ -30,5 +34,5 @@ def generate_launch_description():
              parameters=[{'video_device': '/dev/video0', 'image_size': [640, 480]}]),
 
         ExecuteProcess(cmd=['python3', os.path.join(aqui, 'flir_lepton_node.py')], output='screen'),
-        ExecuteProcess(cmd=['python3', os.path.join(aqui, 'jetson_robot_bridge.py')], output='screen'),
+        ExecuteProcess(cmd=['python3', os.path.join(aqui, 'jetson_robot_bridge.py')] + nube, output='screen'),
     ])
